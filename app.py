@@ -263,7 +263,16 @@ def _inject_css():
     }}
 
     /* ── Chrome ────────────────────────────────────────── */
-    #MainMenu {{visibility: hidden;}} footer {{visibility: hidden;}} header {{visibility: hidden;}}
+    #MainMenu {{visibility: hidden;}}
+    footer {{visibility: hidden;}}
+    header {{visibility: hidden;}}
+    [data-testid="manage-app-button"] {{display: none;}}
+    .stAppDeployButton {{display: none;}}
+    ._profileContainer_gzau3_53 {{display: none;}}
+    [data-testid="stStatusWidget"] {{display: none;}}
+    ._container_gzau3_1 {{display: none;}}
+    .viewerBadge_container__r5tak {{display: none;}}
+    .styles_viewerBadge__CvC9N {{display: none;}}
 
     .stTabs [data-baseweb="tab-highlight"] {{ background: {GRADIENT}; border-radius: 3px; }}
     .stTabs [data-baseweb="tab"] {{
