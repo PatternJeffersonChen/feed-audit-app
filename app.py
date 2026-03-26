@@ -712,15 +712,17 @@ def generate_recommendations(results, gmc_issues, title_data, desc_data, field_s
 
 
 def _ai_commentary(overall_pct, cat_data, results, recs, title_data, gmc_issues):
-    """Try to generate AI commentary via Anthropic API if key is available."""
+    """Generate AI commentary via Bifrost (Pattern's AI gateway) using OpenAI-compatible API."""
     try:
-        api_key = st.secrets.get("anthropic", {}).get("api_key", "")
-        if not api_key:
+        bifrost = st.secrets.get("bifrost", {})
+        api_key = bifrost.get("api_key", "")
+        base_url = bifrost.get("base_url", "")
+        model = bifrost.get("model", "anthropic/claude-sonnet-4-20250514")
+        if not api_key or not base_url:
             return None
-        import anthropic
-        client = anthropic.Anthropic(api_key=api_key)
+        from openai import OpenAI
+        client = OpenAI(base_url=base_url, api_key=api_key)
 
-        # Build context
         cat_summary = "; ".join(f"{k}: {v['pct']:.0f}%" for k, v in cat_data.items())
         top_issues = "; ".join(r[1] for r in recs[:5])
         gmc_errors = sum(1 for i in gmc_issues if i["severity"] == "error")
@@ -735,18 +737,18 @@ Feed stats:
 - GMC errors: {gmc_errors}
 - Average title length: {title_len} chars
 - Top issues: {top_issues}
-- Total products: {sum(1 for _ in results)} attributes audited
+- Total attributes audited: {len(results)}
 
 Tone: professional, direct, optimistic but honest. Focus on business impact (impressions, clicks, revenue).
 Do NOT use markdown headers or bullet points — write flowing paragraphs.
-Keep it under 200 words. Use specific numbers."""
+Keep it under 200 words. Use specific numbers from the data above."""
 
-        msg = client.messages.create(
-            model="claude-haiku-4-5-20251001",
+        response = client.chat.completions.create(
+            model=model,
             max_tokens=400,
             messages=[{"role": "user", "content": prompt}],
         )
-        return msg.content[0].text
+        return response.choices[0].message.content
     except Exception:
         return None
 
@@ -929,6 +931,46 @@ else:
 report_bytes = generate_excel_report(results, gmc_issues, recs, df)
 st.download_button("Download Full Report (.xlsx)", data=report_bytes, file_name="feed_audit_report.xlsx",
                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", use_container_width=True)
+
+# ═════════════════════════════════════════════════════════════════════════════
+# SCORING GUIDE
+# ═════════════════════════════════════════════════════════════════════════════
+with st.expander("How does scoring work?"):
+    st.markdown(f"""
+<div style="font-size:0.88rem;line-height:1.7;color:#bbb;">
+
+<strong style="color:{LIGHT};">What this audit measures</strong><br>
+We analyse <strong>20 product feed attributes</strong> across three categories that determine your Google Shopping performance:
+
+<div style="display:flex;gap:2rem;margin:0.8rem 0;flex-wrap:wrap;">
+<div><span style="color:{BLUE};font-weight:700;">Customer-Facing</span><br><span style="color:#666;font-size:0.8rem;">Brand, color, size, material, gender, price, condition</span></div>
+<div><span style="color:{VIOLET};font-weight:700;">Internal Attributes</span><br><span style="color:#666;font-size:0.8rem;">Product ID, link, GTIN, custom labels, availability, images</span></div>
+<div><span style="color:{SEA};font-weight:700;">Key Shopping Content</span><br><span style="color:#666;font-size:0.8rem;">Title, description, image URL</span></div>
+</div>
+
+<strong style="color:{LIGHT};">How scores are calculated</strong><br>
+Each attribute gets a <strong>fill rate</strong> (what % of products have this data), which maps to a grade:
+
+<div style="display:flex;gap:12px;margin:0.6rem 0;flex-wrap:wrap;">
+<span class="badge badge-excellent">100% = Excellent</span>
+<span class="badge badge-good">80%+ = Good</span>
+<span class="badge badge-average">50%+ = Average</span>
+<span class="badge badge-below-average">20%+ = Below Average</span>
+<span class="badge badge-insufficient">&lt;20% = Insufficient</span>
+</div>
+
+Grades are then <strong>weighted by importance</strong>: "Must have" attributes (like title, price, GTIN) count <strong>3x</strong> more than "Bonus" attributes. The overall score is the weighted average across all 20 attributes.
+
+<br><strong style="color:{LIGHT};">What does a good score look like?</strong><br>
+<span style="color:{SEA};font-weight:600;">90%+</span> — Excellent. Competitive feed ready for Performance Max.<br>
+<span style="color:{BLUE};font-weight:600;">70–89%</span> — Good foundation. Targeted fixes can significantly improve impressions.<br>
+<span style="color:{AMBER};font-weight:600;">50–69%</span> — Average. Missing attributes are costing you impression share and clicks.<br>
+<span style="color:{RED};font-weight:600;">Below 50%</span> — Needs significant work. Likely losing to competitors with richer feeds.
+
+<br><strong style="color:{LIGHT};">Why does this matter?</strong><br>
+Google's AI systems (including Performance Max) use your product data to decide <em>which products to show, to whom, and at what bid</em>. Incomplete feeds are penalised with fewer impressions regardless of how competitive your bids are. Products with valid GTINs alone get up to <strong>40% more clicks</strong>.
+</div>
+""", unsafe_allow_html=True)
 
 # ═════════════════════════════════════════════════════════════════════════════
 # TABS
