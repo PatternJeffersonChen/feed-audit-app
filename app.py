@@ -37,39 +37,66 @@ WEIGHTING_MAP = {"Must have": 3, "Good to have": 2, "Bonus": 1}
 # 3. AUTHENTICATION
 # ═════════════════════════════════════════════════════════════════════════════
 
+def _write_client_secret_json():
+    """Generate client_secret.json from st.secrets for streamlit-google-auth."""
+    import json, os
+    path = "/tmp/client_secret.json"
+    if not os.path.exists(path):
+        payload = {
+            "web": {
+                "client_id": st.secrets["google_oauth"]["client_id"],
+                "client_secret": st.secrets["google_oauth"]["client_secret"],
+                "redirect_uris": [st.secrets["google_oauth"]["redirect_uri"]],
+                "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+                "token_uri": "https://oauth2.googleapis.com/token",
+            }
+        }
+        with open(path, "w") as f:
+            json.dump(payload, f)
+    return path
+
+
 def check_auth():
-    """Gate access to @pattern.com users via a simple password or Google OAuth."""
+    """Gate access to @pattern.com users via Google OAuth or email fallback."""
     if st.session_state.get("authenticated"):
         return True
 
-    # Check if secrets are configured for OAuth
+    # Check if Google OAuth secrets are configured
     has_oauth = False
     try:
         _ = st.secrets["google_oauth"]["client_id"]
+        _ = st.secrets["google_oauth"]["client_secret"]
         has_oauth = True
     except Exception:
         pass
 
     if has_oauth:
-        # Google OAuth flow
         try:
             from streamlit_google_auth import Authenticate
+            secret_path = _write_client_secret_json()
+            redirect_uri = st.secrets["google_oauth"].get("redirect_uri", "http://localhost:8501")
+            cookie_key = st.secrets["google_oauth"].get("cookie_key", "pattern_feed_audit_key")
+
             authenticator = Authenticate(
-                secret_credentials_path="client_secret.json",
+                secret_credentials_path=secret_path,
                 cookie_name="pattern_feed_audit",
-                cookie_key=st.secrets["google_oauth"].get("cookie_key", "feed_audit_secret"),
-                redirect_uri=st.secrets["google_oauth"].get("redirect_uri", "http://localhost:8501"),
+                cookie_key=cookie_key,
+                redirect_uri=redirect_uri,
             )
             authenticator.check_authentification()
+
             if st.session_state.get("connected"):
                 email = st.session_state.get("user_info", {}).get("email", "")
                 if email.endswith("@pattern.com"):
                     st.session_state["authenticated"] = True
                     st.session_state["user_email"] = email
+                    st.session_state["user_name"] = st.session_state.get("user_info", {}).get("name", email)
                     return True
                 else:
-                    st.error(f"Access restricted to @pattern.com accounts. You signed in as {email}")
-                    authenticator.login()
+                    _inject_css()
+                    st.markdown(f'<div style="text-align:center;margin:4rem 0 1rem;">{LOGO_SVG}</div>', unsafe_allow_html=True)
+                    st.error(f"Access restricted to @pattern.com accounts. You signed in as **{email}**.")
+                    authenticator.logout()
                     st.stop()
             else:
                 _show_login_page(authenticator)
@@ -78,7 +105,7 @@ def check_auth():
             _show_password_gate()
             st.stop()
     else:
-        # Fallback: simple password or email gate
+        # Fallback: email gate (no OAuth configured)
         _show_password_gate()
         st.stop()
 
